@@ -14,13 +14,14 @@ def parse_args():
     )
     subparsers = parser.add_subparsers(title="operation", dest="operation")
     split_parser = subparsers.add_parser("split")
+    split_parser.add_argument("-f", "--file", help="File to split", dest="file")
     split_parser.add_argument(
-        "-f",
-        "--file",
-        help="File to split",
-    )
-    split_parser.add_argument(
-        "-p", "--parts", help="the number of parts to split into", type=int, default=0
+        "-p",
+        "--parts",
+        help="the number of parts to split into",
+        type=int,
+        default=0,
+        dest="parts",
     )
     split_parser.add_argument(
         "-cs",
@@ -28,6 +29,7 @@ def parse_args():
         help="the chunk size (in bytes) of each part to split into",
         type=int,
         default=0,
+        dest="chunk_size",
     )
     split_parser.add_argument(
         "-R",
@@ -42,6 +44,13 @@ def parse_args():
     merge_parser.add_argument(
         "-d", "--dir", help="directory containing files to merge", dest="dir"
     )
+    merge_parser.add_argument(
+        "-R",
+        "--remove",
+        help="remove the directory",
+        dest="remove",
+        action="store_true",
+    )
     merge_parser.add_argument("-v", help="verbose", dest="verbose", action="store_true")
     return parser.parse_args()
 
@@ -50,6 +59,7 @@ def split_file(
     filename: str, parts: int = 0, chunk_size: int = 0, remove: bool = False
 ) -> bool:
     if parts == 0 and chunk_size == 0:
+        verbose(f"[x] Parts and chunk size cannot both be 0!", Fore.RED)
         return False
 
     current_dir = Path(".").resolve()
@@ -72,10 +82,7 @@ def split_file(
     verbose(f"[i] Segment size: {chunk_size}")
     verbose(f"[i] Creating {basename} directory...")
     subdir = current_dir / basename
-    if subdir.is_dir():
-        for path in subdir.glob("*"):
-            path.unlink()
-        subdir.rmdir()
+    remove_dir(subdir)
     subdir.mkdir()
 
     verbose(f"[i] Splitting files...")
@@ -84,17 +91,20 @@ def split_file(
         part_filepath = subdir / f"{filename}.{part}.prt"
         part_filepath.write_bytes(buffer)
 
+    verbose(f"[i] Writing hash...")
     hashpath = subdir / f"{filename}.hash"
     hashpath.write_text(filehash)
 
     if remove:
         verbose(f"[i] Removing the original file...")
         filepath.unlink(missing_ok=True)
+    verbose("[+] Finish!")
 
 
-def merge(dirname: str):
+def merge(dirname: str, remove: bool = False):
     dirpath = Path(".") / dirname
     if not dirpath.is_dir():
+        verbose(f"[x] Directory not exists!", Fore.RED)
         return False
 
     filebytes = b""
@@ -120,7 +130,16 @@ def merge(dirname: str):
     if ver_filehash == filehash:
         verbose(f"[i] Hash verification succeeded!")
     else:
-        verbose(f"[x] Hash verification failed!")
+        verbose(f"[x] Hash verification failed!", Fore.RED)
+    if remove:
+        remove_dir(dirpath)
+
+
+def remove_dir(dirpath: Path):
+    if dirpath.is_dir():
+        for path in dirpath.glob("*"):
+            path.unlink()
+        dirpath.rmdir()
 
 
 def get_part_no(filepath: Path):
@@ -132,24 +151,27 @@ def get_sorted_files(dirpath: Path):
     return filepaths
 
 
-def verbose(msg: str):
+def verbose(msg: str, color=Fore.GREEN):
     global VERBOSE
 
     if VERBOSE:
-        print(msg)
+        print(f"{color}{msg}{Style.RESET_ALL}")
 
 
 def main():
     global VERBOSE
 
     args = parse_args()
-    if args.verbose:
-        VERBOSE = True
+    try:
+        if args.verbose:
+            VERBOSE = True
+    except:
+        pass
 
     if args.operation == "split":
         split_file(args.file, args.parts, args.chunk_size, args.remove)
     elif args.operation == "merge":
-        merge(args.dir)
+        merge(args.dir, args.remove)
 
 
 if __name__ == "__main__":
