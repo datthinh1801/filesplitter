@@ -67,8 +67,7 @@ def split_file(
     filesuffix = "".join(filepath.suffixes)
     basename = filepath.name.removesuffix("".join(filepath.suffixes))
     filesize = filepath.stat().st_size
-    filebytes = filepath.read_bytes()
-    filehash = hashlib.sha256(filebytes).hexdigest()
+    filehash = hashlib.sha256(filepath.read_bytes()).hexdigest()
 
     verbose(f"[i] Source file: {filepath}")
     verbose(f"[i] File size: {filesize}")
@@ -80,16 +79,19 @@ def split_file(
         parts = math.ceil(filesize / chunk_size)
     verbose(f"[i] Parts: {parts}")
     verbose(f"[i] Segment size: {chunk_size}")
+
     verbose(f"[i] Creating {basename} directory...")
     subdir = current_dir / basename
     remove_dir(subdir)
     subdir.mkdir()
 
     verbose(f"[i] Splitting files...")
-    for part in range(parts):
-        buffer = filebytes[part * chunk_size : (part + 1) * chunk_size]
-        part_filepath = subdir / f"{filename}.{part}.prt"
-        part_filepath.write_bytes(buffer)
+    with filepath.open("rb") as f:
+        for part in range(parts):
+            chunk = f.read(chunk_size)
+            part_filepath = subdir / f"{filename}.{part}.prt"
+            with part_filepath.open("wb") as fp:
+                fp.write(chunk)
 
     verbose(f"[i] Writing hash...")
     hashpath = subdir / f"{filename}.hash"
