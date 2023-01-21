@@ -1,16 +1,21 @@
+"""Sync data with git
+"""
 import argparse
-import git
+
 from pathlib import Path
+
+import git
 
 
 def parse_args():
+    """Parse CLI arguments."""
     parser = argparse.ArgumentParser(description="Backup a directory with git.")
     repo_group = parser.add_argument_group("repository")
     dir_group = repo_group.add_mutually_exclusive_group()
     dir_group.add_argument(
         "-d",
         "--dir",
-        help="the directory that already has .git",
+        help="the directory that already has .git (default: current directory)",
         dest="git_dir",
         default=".",
         type=str,
@@ -35,7 +40,8 @@ def parse_args():
     )
     commit_group.add_argument(
         "--mode",
-        help="modes of commit (batch: commit all files at once; individual: commit individual files separately) (default: individual)",
+        help="modes of commit (batch: commit all files at once;\
+            individual: commit individual files separately) (default: individual)",
         choices=["batch", "individual"],
         default="individual",
         dest="commit_mode",
@@ -69,6 +75,12 @@ def parse_args():
 
 
 def push_updates(repo: git.Repo, remote_name: str):
+    """Push updates to the remote repository.
+
+    Args:
+        repo (git.Repo): the Repo object of the repository.
+        remote_name (str): the name of the remote repository.
+    """
     try:
         remote = repo.remote(remote_name)
         remote.push()
@@ -77,6 +89,12 @@ def push_updates(repo: git.Repo, remote_name: str):
 
 
 def fetch_updates(repo: git.Repo, remote_name: str):
+    """Fetch updates from the remote repository.
+
+    Args:
+        repo (git.Repo): the Repo object of the repository.
+        remote_name (str): the name of the remote repository.
+    """
     try:
         remote = repo.remote(remote_name)
         remote.fetch()
@@ -86,12 +104,20 @@ def fetch_updates(repo: git.Repo, remote_name: str):
 
 def batch_commit(
     repo: git.Repo,
-    git_dir: Path,
     msg: str,
     remote_name: str = "origin",
     fetch: bool = False,
     push: bool = False,
 ):
+    """Commit (and push) untracked and modified files all at once.
+
+    Args:
+        repo (git.Repo): the Repo object of the repository.
+        msg (str): the commit message.
+        remote_name (str, optional): the name of the remote repository. Defaults to "origin".
+        fetch (bool, optional): fetch updates before doing commit. Defaults to False.
+        push (bool, optional): push updates after doing commit. Defaults to False.
+    """
     if fetch:
         print("Fetching updates")
         fetch_updates(repo, remote_name)
@@ -111,12 +137,20 @@ def batch_commit(
 
 def individual_commit(
     repo: git.Repo,
-    git_dir: Path,
     msg: str,
     remote_name: str = "origin",
     fetch: bool = False,
     push: bool = False,
 ):
+    """Commit (and push) untracked and modified files individually.
+
+    Args:
+        repo (git.Repo): the Repo object of the repository.
+        msg (str): the commit message.
+        remote_name (str, optional): the name of the remote repository. Defaults to "origin".
+        fetch (bool, optional): fetch updates before doing commit. Defaults to False.
+        push (bool, optional): push updates after doing commit. Defaults to False.
+    """
     if fetch:
         print("Fetching updates")
         fetch_updates(repo, remote_name)
@@ -132,6 +166,11 @@ def individual_commit(
 
 
 def get_changed_and_untracked_files(repo: git.Repo):
+    """Get untracked and modified files of the repository.
+
+    Args:
+        repo (git.Repo): the Repo object of the repository.
+    """
     changed_files = [item.a_path for item in repo.index.diff(None)]
     untracked_files = repo.untracked_files
     to_commit_files = changed_files + untracked_files
@@ -139,17 +178,23 @@ def get_changed_and_untracked_files(repo: git.Repo):
 
 
 def create_new_remote(repo: git.Repo, remote_name: str, remote_url: str):
+    """Create a new remote repository for the local repository.
+
+    Args:
+        repo (git.Repo): the Repo object of the local repository.
+        remote_name (str): the name of the remote repository.
+        remote_url (str): the URL of the remote repository.
+    """
     repo.create_remote(remote_name, remote_url)
 
 
-if __name__ == "__main__":
+def main():
+    """Main routine of git_sync."""
     args = parse_args()
     if args.bare:
         repo = git.Repo.init()
-        git_dir = Path(".")
     else:
         repo = git.Repo(args.git_dir)
-        git_dir = Path(args.git_dir)
 
     if args.create_remote:
         create_new_remote(repo, args.remote_name, args.remote_url)
@@ -158,7 +203,6 @@ if __name__ == "__main__":
         if args.commit_mode == "batch":
             batch_commit(
                 repo,
-                git_dir,
                 args.commit_message,
                 remote_name=args.remote_name,
                 fetch=args.fetch,
@@ -167,7 +211,6 @@ if __name__ == "__main__":
         elif args.commit_mode == "individual":
             individual_commit(
                 repo,
-                git_dir,
                 args.commit_message,
                 remote_name=args.remote_name,
                 fetch=args.fetch,
@@ -175,3 +218,7 @@ if __name__ == "__main__":
             )
 
     print("Finished!")
+
+
+if __name__ == "__main__":
+    main()
