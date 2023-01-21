@@ -3,9 +3,6 @@ import hashlib
 import math
 from pathlib import Path
 from colorama import Fore, Style
-from configparser import ConfigParser
-
-VERBOSE = False
 
 
 def parse_args():
@@ -26,7 +23,7 @@ def parse_args():
     split_parser.add_argument(
         "-cs",
         "--chunk-size",
-        help="the chunk size (in bytes) of each part to split into",
+        help="the max size (in bytes) of each small file to split into",
         type=int,
         default=0,
         dest="chunk_size",
@@ -56,7 +53,7 @@ def parse_args():
 
 
 def split_file(
-    filename: str, parts: int = 0, chunk_size: int = 0, remove: bool = False
+    filename: str or Path, parts: int = 0, chunk_size: int = 0, remove: bool = False
 ) -> bool:
     if parts == 0 and chunk_size == 0:
         verbose(f"[x] Parts and chunk size cannot both be 0!", Fore.RED)
@@ -64,13 +61,15 @@ def split_file(
 
     current_dir = Path(".").resolve()
     filepath = current_dir / filename
+    filename = filepath.name
+    parentpath = filepath.parent
     filesuffix = "".join(filepath.suffixes)
     basename = filepath.name.removesuffix("".join(filepath.suffixes))
     filesize = filepath.stat().st_size
 
     verbose(f"[+] Source file: {filepath}")
     verbose(f"[+] File size: {filesize}")
-    verbose(f"[i] Calculating file hash...", Fore.YELLOW)
+    verbose(f"[i] Calculating file hash", Fore.YELLOW)
     filehash = hashlib.sha256(filepath.read_bytes()).hexdigest()
     verbose(f"[+] File hash: {filehash}")
 
@@ -82,12 +81,12 @@ def split_file(
     verbose(f"[+] Parts: {parts}")
     verbose(f"[+] Segment size: {chunk_size}")
 
-    verbose(f"[i] Creating {basename} directory...", Fore.YELLOW)
-    subdir = current_dir / basename
+    verbose(f"[i] Creating {basename} directory", Fore.YELLOW)
+    subdir = parentpath / basename
     remove_dir(subdir)
     subdir.mkdir()
 
-    verbose(f"[i] Splitting files...", Fore.YELLOW)
+    verbose(f"[i] Splitting files", Fore.YELLOW)
     bytes_write = 0
     with filepath.open("rb") as f:
         for part in range(parts):
@@ -98,31 +97,34 @@ def split_file(
                 bytes_write += len(chunk)
 
     verbose(f"[+] {bytes_write} bytes written")
-    verbose(f"[i] Writing hash...", Fore.YELLOW)
+    verbose(f"[i] Writing hash", Fore.YELLOW)
     hashpath = subdir / f"{filename}.hash"
     hashpath.write_text(filehash)
 
     if remove:
-        verbose(f"[i] Removing the original file...", Fore.YELLOW)
+        verbose(f"[i] Removing the original file", Fore.YELLOW)
         filepath.unlink(missing_ok=True)
     verbose("[+] Finish!")
 
 
-def merge(dirname: str, remove: bool = False):
-    dirpath = Path(".") / dirname
-    verbose(f"[i] Reading directory...", Fore.YELLOW)
+def merge(dirname: str or Path, remove: bool = False):
+    if isinstance(dirname, Path) and dirname.is_absolute():
+        dirpath = dirname
+    else:
+        dirpath = Path(".") / dirname
+    verbose(f"[i] Reading directory: {dirpath.resolve()}", Fore.YELLOW)
     if not dirpath.is_dir():
         verbose(f"[x] Directory not exists!", Fore.RED)
         return False
 
     filepath = None
-    verbose(f"[i] Merging files...", Fore.YELLOW)
+    verbose(f"[i] Merging files", Fore.YELLOW)
     for path in get_sorted_files(dirpath):
-        verbose(f"[i] Reading {path.name}...", Fore.YELLOW)
+        verbose(f"[i] Reading file: {path.name}", Fore.YELLOW)
         # infer the original filename from the first splitted file
         if filepath is None:
             filename = f"{path.name.split('.')[0]}{''.join(path.suffixes[:-2])}"
-            filepath = Path(".") / filename
+            filepath = dirpath.parent / filename
 
             if filepath.is_file():
                 filepath.unlink()
@@ -131,7 +133,14 @@ def merge(dirname: str, remove: bool = False):
         with filepath.open("ab") as f:
             f.write(buffer)
 
-    verbose(f"[i] Verifying file hash...", Fore.YELLOW)
+    if filepath is None:
+        filehashpath = list(dirpath.glob("*hash"))[0]
+        filename = (
+            f"{filehashpath.name.split('.')[0]}{''.join(filehashpath.suffixes[:-1])}"
+        )
+        filepath = dirpath.parent / filename
+        filepath.write_bytes(b"")
+    verbose(f"[i] Verifying file hash", Fore.YELLOW)
     ver_filehash = hashlib.sha256(filepath.read_bytes()).hexdigest()
     filehashpath = list(dirpath.glob("*hash"))[0]
     filehash = filehashpath.read_text()
@@ -141,7 +150,7 @@ def merge(dirname: str, remove: bool = False):
         verbose(f"[x] Hash verification failed!", Fore.RED)
 
     if remove:
-        verbose(f"[i] Removing the directory...", Fore.YELLOW)
+        verbose(f"[i] Removing the directory", Fore.YELLOW)
         remove_dir(dirpath)
     verbose(f"[+] Finish!")
 
@@ -163,22 +172,11 @@ def get_sorted_files(dirpath: Path):
 
 
 def verbose(msg: str, color=Fore.GREEN):
-    global VERBOSE
-
-    if VERBOSE:
-        print(f"{color}{msg}{Style.RESET_ALL}")
+    print(f"{color}{msg}{Style.RESET_ALL}")
 
 
 def main():
-    global VERBOSE
-
     args = parse_args()
-    try:
-        if args.verbose:
-            VERBOSE = True
-    except:
-        pass
-
     if args.operation == "split":
         split_file(args.file, args.parts, args.chunk_size, args.remove)
     elif args.operation == "merge":
