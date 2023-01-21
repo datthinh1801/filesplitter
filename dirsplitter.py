@@ -1,13 +1,20 @@
+""""
+Recursively split files within a directory.
+And recursively merge files within subdirectories into original files.
+"""
+
 import argparse
 
-from colorama import Fore
 from pathlib import Path
 from queue import Queue
+
+from colorama import Fore
 
 from filesplitter import split_file, merge, verbose
 
 
 def parse_args():
+    """Parse CLI arguments."""
     parser = argparse.ArgumentParser(
         description="Recursively split large files within a directory into smaller files or \
         recursively merge small files into larger files within a directory."
@@ -52,24 +59,32 @@ def parse_args():
 
 
 def collect_dirs(dirpath: Path):
+    """Collect subdirectories of small files within a directory.
+
+    Args:
+        dirpath (Path): the Path object of the directory.
+    """
     cur_path = dirpath
     final_dirs = []
-    q = Queue()
-    q.put(cur_path)
-    while not q.empty():
-        cur_path = q.get()
-        subdirs = [
-            subdir_path for subdir_path in cur_path.glob("*") if subdir_path.is_dir()
-        ]
+    queue = Queue()
+    queue.put(cur_path)
+    while not queue.empty():
+        cur_path = queue.get()
+        children = list(cur_path.glob("*"))
+        if len(children) == 0:
+            continue
+
+        subdirs = [subdir for subdir in children if subdir.is_dir()]
         if len(subdirs) > 0:
             for subdir in subdirs:
-                q.put(subdir)
+                queue.put(subdir)
         else:
             final_dirs.append(cur_path)
     return final_dirs
 
 
 def main():
+    """Main routine of dirsplitter."""
     args = parse_args()
     dirpath = Path(args.dir)
     if not dirpath.is_dir():
