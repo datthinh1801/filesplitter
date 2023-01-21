@@ -132,7 +132,10 @@ def batch_commit(
     repo.index.commit(msg)
     if push:
         print("Pushing updates")
-        push_updates(repo, remote_name)
+        try:
+            push_updates(repo, remote_name)
+        except KeyboardInterrupt:
+            print("Keyboard interrupted! Exit...")
 
 
 def individual_commit(
@@ -162,7 +165,11 @@ def individual_commit(
         repo.index.commit(msg)
         if push:
             print(f"Pushing {filepath.name}")
-            push_updates(repo, remote_name)
+            try:
+                push_updates(repo, remote_name)
+            except KeyboardInterrupt:
+                print("Keyboard interrupted! Exit...")
+                break
 
 
 def get_changed_and_untracked_files(repo: git.Repo):
