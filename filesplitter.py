@@ -4,6 +4,8 @@ Split a large file into smaller files. Or merge smaller files into the original 
 import argparse
 import hashlib
 import math
+import zlib
+
 from pathlib import Path
 from configparser import ConfigParser
 from colorama import Fore, Style
@@ -124,6 +126,9 @@ def split_file(
     with filepath.open("rb") as file_handle:
         for part in range(parts):
             chunk = file_handle.read(chunk_size)
+            if compress:
+                chunk = zlib.compress(chunk)
+
             part_filepath = subdir / f"{filename}.{part}.prt"
             verbose(f"[i] Writing to file: {part_filepath.name}")
             with part_filepath.open("wb") as filepath_handle:
@@ -169,9 +174,12 @@ def merge(dirname: str or Path, remove: bool = False):
         filepath.unlink()
 
     verbose("[i] Merging files", Fore.YELLOW)
+    decompress = config["OPERATION"]["compress"]
     for path in get_sorted_files(dirpath, config):
         verbose(f"[i] Reading file: {path.name}", Fore.YELLOW)
         buffer = path.read_bytes()
+        if decompress:
+            buffer = zlib.decompress(buffer)
         with filepath.open("ab") as file_handle:
             file_handle.write(buffer)
 
@@ -255,7 +263,7 @@ def main():
     """The main routine of filesplitter."""
     args = parse_args()
     if args.operation == "split":
-        split_file(args.file, args.parts, args.chunk_size, args.remove)
+        split_file(args.file, args.parts, args.chunk_size, args.remove, args.compress)
     elif args.operation == "merge":
         merge(args.dir, args.remove)
 
