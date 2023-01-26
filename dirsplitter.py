@@ -133,13 +133,21 @@ def collect_files(dirpath: Path, ignore_files: list[str]) -> list[Path]:
     Returns:
         (list[Path]): a list of file paths.
     """
-    files = list(dirpath.glob("**/*"))
+    files = [path for path in dirpath.glob("**/*") if path.is_file()]
     ignore_filepaths = [Path(filename).resolve() for filename in ignore_files or []]
-    return [
+    final_filepaths = [
         final_file
         for final_file in files
         if final_file.resolve() not in ignore_filepaths
     ]
+    final_filepaths = list(
+        filter(
+            lambda filepath: filepath.suffix != ".prt"
+            and filepath.name != "config.ini",
+            final_filepaths,
+        )
+    )
+    return final_filepaths
 
 
 def main():
@@ -151,9 +159,7 @@ def main():
         return
 
     if args.operation == "split":
-        filepath_list = [
-            filepath for filepath in dirpath.glob("**/*") if filepath.is_file()
-        ]
+        filepath_list = collect_files(dirpath, args.ignore_files)
 
         for filepath in filepath_list:
             split_file(
