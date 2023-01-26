@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import math
 from pathlib import Path
+from configparser import ConfigParser
 from colorama import Fore, Style
 
 
@@ -44,6 +45,12 @@ def parse_args() -> argparse.Namespace:
         dest="remove",
         action="store_true",
     )
+    split_parser.add_argument(
+        "--compress",
+        help="compress the splitted files",
+        dest="compress",
+        action="store_true",
+    )
     split_parser.add_argument("-v", help="verbose", dest="verbose", action="store_true")
 
     merge_parser = subparsers.add_parser("merge")
@@ -62,7 +69,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def split_file(
-    filename: str or Path, parts: int = 0, chunk_size: int = 0, remove: bool = False
+    filename: str or Path,
+    parts: int = 0,
+    chunk_size: int = 0,
+    remove: bool = False,
+    compress: bool = False,
 ):
     """Split a file into smaller files (into parts or into files or chunk_size).
 
@@ -81,11 +92,17 @@ def split_file(
     basename = filename.removesuffix("".join(filepath.suffixes))
     filesize = filepath.stat().st_size
 
+    config = ConfigParser()
+    config["ORIGINAL"] = {"filename": filename, "size": filesize}
+
     verbose(f"[+] Source file: {filepath}")
     verbose(f"[+] File size: {filesize}")
     verbose("[i] Calculating file hash", Fore.YELLOW)
-    filehash = hashlib.sha256(filepath.read_bytes()).hexdigest()
+    filehash = compute_hash(filepath)
     verbose(f"[+] File hash: {filehash}")
+
+    config["ORIGINAL"]["hash"] = filehash
+    config["OPERATION"] = {"compress": compress}
 
     if parts > 0:
         chunk_size = math.ceil(filesize / parts)
@@ -94,6 +111,8 @@ def split_file(
 
     verbose(f"[+] Parts: {parts}")
     verbose(f"[+] Segment size: {chunk_size}")
+
+    config["PARTS"] = {"parts": parts}
 
     verbose(f"[i] Creating {basename} directory", Fore.YELLOW)
     subdir = filepath.parent / basename
@@ -111,10 +130,12 @@ def split_file(
                 filepath_handle.write(chunk)
                 bytes_write += len(chunk)
 
+            config["PARTS"][str(part)] = part_filepath.name
+
     verbose(f"[+] {bytes_write} bytes written")
-    verbose("[i] Writing hash", Fore.YELLOW)
-    hashpath = subdir / f"{filename}.hash"
-    hashpath.write_text(filehash)
+    verbose("[i] Writing configuration", Fore.YELLOW)
+    with (subdir / "config.ini").open("w", encoding="utf8") as config_file:
+        config.write(config_file)
 
     if remove:
         verbose("[i] Removing the original file", Fore.YELLOW)
@@ -139,43 +160,58 @@ def merge(dirname: str or Path, remove: bool = False):
         verbose("[x] Directory not exists!", Fore.RED)
         return
 
-    filepath = None
+    verbose("[i] Reading configuration file", Fore.YELLOW)
+    config = ConfigParser()
+    config.read(dirpath / "config.ini", encoding="utf8")
+    filename = config["ORIGINAL"]["filename"]
+    filepath = dirpath.parent / filename
+    if filepath.is_file():
+        filepath.unlink()
+
     verbose("[i] Merging files", Fore.YELLOW)
-    for path in get_sorted_files(dirpath):
+    for path in get_sorted_files(dirpath, config):
         verbose(f"[i] Reading file: {path.name}", Fore.YELLOW)
-        # infer the original filename from the first splitted file
-        if filepath is None:
-            filename = f"{path.name.split('.')[0]}{''.join(path.suffixes[:-2])}"
-            filepath = dirpath.parent / filename
-
-            if filepath.is_file():
-                filepath.unlink()
-
         buffer = path.read_bytes()
         with filepath.open("ab") as file_handle:
             file_handle.write(buffer)
 
-    if filepath is None:
-        filehashpath = list(dirpath.glob("*hash"))[0]
-        filename = (
-            f"{filehashpath.name.split('.')[0]}{''.join(filehashpath.suffixes[:-1])}"
-        )
-        filepath = dirpath.parent / filename
+    # check if the file has contents
+    if not filepath.is_file():
         filepath.write_bytes(b"")
 
     verbose("[i] Verifying file hash", Fore.YELLOW)
-    ver_filehash = hashlib.sha256(filepath.read_bytes()).hexdigest()
-    filehashpath = list(dirpath.glob("*hash"))[0]
-    filehash = filehashpath.read_text()
+    ver_filehash = compute_hash(filepath)
+    filehash = config["ORIGINAL"]["hash"]
     if ver_filehash == filehash:
         verbose("[+] Hash verification succeeded!")
     else:
         verbose("[x] Hash verification failed!", Fore.RED)
+        exit(1)
 
     if remove:
         verbose("[i] Removing the directory", Fore.YELLOW)
         remove_dir(dirpath)
     verbose("[+] Finish!")
+
+
+def compute_hash(filepath: Path, block_size: int = 512) -> str:
+    """Compute hash for a filepath efficiently.
+
+    Args:
+        filepath (Path): the Path object of the file.
+        block_size (int, optional): the size of the block to read per time.
+
+    Returns:
+        (str): the hex digest of the file.
+    """
+    sha256 = hashlib.sha256()
+    with filepath.open("rb") as file_handle:
+        while True:
+            buffer = file_handle.read(block_size)
+            if not buffer:
+                break
+            sha256.update(buffer)
+    return sha256.hexdigest()
 
 
 def remove_dir(dirpath: Path):
@@ -190,25 +226,18 @@ def remove_dir(dirpath: Path):
         dirpath.rmdir()
 
 
-def get_part_no(filepath: Path):
-    """Get the part number of a file.
-
-    Args:
-        filepath (Path): the Path object of the directory
-
-    Returns:
-        _type_: _description_
-    """
-    return int(filepath.suffixes[-2].strip("."))
-
-
-def get_sorted_files(dirpath: Path):
+def get_sorted_files(dirpath: Path, config: ConfigParser):
     """Return files within a directory in a sorted order based on their part number.
 
     Args:
         dirpath (Path): the Path object of the directory.
     """
-    filepaths = sorted(dirpath.glob("*prt"), key=get_part_no)
+    parts = int(config["PARTS"]["parts"])
+    filepaths = []
+    for part in range(parts):
+        filename = config["PARTS"][str(part)]
+        filepath = dirpath / filename
+        filepaths.append(filepath)
     return filepaths
 
 
