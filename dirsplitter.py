@@ -4,6 +4,7 @@ And recursively merge files within subdirectories into original files.
 """
 
 import argparse
+import shutil
 
 from pathlib import Path
 from queue import Queue
@@ -111,6 +112,12 @@ def collect_dirs(dirpath: Path, ignore_dirs: list[str]) -> list[Path]:
         if cur_dir.resolve() in ignore_paths:
             continue
 
+        # directory that only contains splitted files
+        if (cur_dir / "config.ini").exists():
+            final_dirs.append(cur_dir)
+            continue
+
+        # empty directory
         children = list(cur_dir.glob("*"))
         if len(children) == 0:
             continue
@@ -119,8 +126,6 @@ def collect_dirs(dirpath: Path, ignore_dirs: list[str]) -> list[Path]:
         for subdir in subdirs:
             queue.put(subdir)
 
-        if (cur_dir / "config.ini").exists():
-            final_dirs.append(cur_dir)
     return final_dirs
 
 
@@ -150,31 +155,87 @@ def collect_files(dirpath: Path, ignore_files: list[str]) -> list[Path]:
     return final_filepaths
 
 
+def split_dir(
+    dirname: Path or str,
+    ignore_files: list,
+    parts: int,
+    chunks_size: int,
+    remove: bool,
+    compress: bool,
+):
+    """Split files within the given directory.
+
+    Args:
+        dirname (Path or str): the name of the directory.
+        ignore_files (list): the name of files to ignore.
+        parts (int): the number of parts to split a file into.
+        chunks_size (int): the max size (in byte) of a small file to split into.
+        remove (bool): remove the original files.
+        compress (bool): compress the splitted files.
+    """
+    if isinstance(dirname, str):
+        dirpath = Path(dirname)
+    else:
+        dirpath = dirname
+
+    if not dirpath.is_dir():
+        verbose(f"[x] {dirname} not exists!", Fore.RED)
+        exit(1)
+
+    filepath_list = collect_files(dirpath, ignore_files)
+    for filepath in filepath_list:
+        split_file(
+            filepath,
+            parts=parts,
+            chunk_size=chunks_size,
+            remove=remove,
+            compress=compress,
+        )
+        print(shutil.get_terminal_size()[0] * "-")
+
+
+def merge_dir(dirname: Path or str, ignore_dirs: list[str], remove: bool):
+    """Merge all splitted files within the given directory into their original files.
+
+    Args:
+        dirname (Path or str): the name of the directory.
+        ignore_dirs (list[str]): a list of directory names to ignore.
+        remove (bool): remove the directory that contains splitted files.
+    """
+    if isinstance(dirname, str):
+        dirpath = Path(dirname)
+    else:
+        dirpath = dirname
+
+    if not dirpath.is_dir():
+        verbose(f"[x] {dirname} not exists!", Fore.RED)
+        exit(1)
+
+    subdir_pathlist = collect_dirs(dirpath, ignore_dirs)
+    for subdir_path in subdir_pathlist:
+        merge(subdir_path, remove)
+        print(shutil.get_terminal_size()[0] * "-")
+
+
 def main():
     """Main routine of dirsplitter."""
     args = parse_args()
     dirpath = Path(args.dir)
     if not dirpath.is_dir():
-        verbose("f[x] {args.dir} not exists!", Fore.RED)
+        verbose(f"[x] {args.dir} not exists!", Fore.RED)
         return
 
     if args.operation == "split":
-        filepath_list = collect_files(dirpath, args.ignore_files)
-
-        for filepath in filepath_list:
-            split_file(
-                filepath,
-                parts=args.parts,
-                chunk_size=args.chunk_size,
-                remove=args.remove,
-                compress=args.compress,
-            )
-            print("-" * 20)
+        split_dir(
+            dirpath,
+            args.ignore_files,
+            args.parts,
+            args.chunk_size,
+            args.remove,
+            args.compress,
+        )
     elif args.operation == "merge":
-        subdir_pathlist = collect_dirs(dirpath, args.ignore_dirs)
-        for subdir_path in subdir_pathlist:
-            merge(subdir_path, args.remove)
-            print("-" * 20)
+        merge_dir(dirpath, args.ignore_dirs, args.remove)
 
 
 if __name__ == "__main__":

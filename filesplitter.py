@@ -99,9 +99,9 @@ def split_file(
 
     verbose(f"[+] Source file: {filepath}")
     verbose(f"[+] File size: {filesize}")
-    verbose("[i] Calculating file hash", Fore.YELLOW)
+    verbose("[i] Calculating file hash")
     filehash = compute_hash(filepath)
-    verbose(f"[+] File hash: {filehash}")
+    verbose(f"[i] File hash: {filehash}", Fore.YELLOW)
 
     config["ORIGINAL"]["hash"] = filehash
     config["OPERATION"] = {"compress": compress}
@@ -121,7 +121,7 @@ def split_file(
     remove_dir(subdir)
     subdir.mkdir()
 
-    verbose("[i] Splitting files", Fore.YELLOW)
+    verbose("[i] Splitting files")
     bytes_write = 0
     with filepath.open("rb") as file_handle:
         for part in range(parts):
@@ -137,15 +137,15 @@ def split_file(
 
             config["PARTS"][str(part)] = part_filepath.name
 
-    verbose(f"[+] {bytes_write} bytes written")
-    verbose("[i] Writing configuration", Fore.YELLOW)
+    verbose(f"[+] {bytes_write} bytes written", Fore.GREEN)
+    verbose("[i] Writing configuration")
     with (subdir / "config.ini").open("w", encoding="utf8") as config_file:
         config.write(config_file)
 
     if remove:
-        verbose("[i] Removing the original file", Fore.YELLOW)
+        verbose("[i] Removing the original file")
         filepath.unlink(missing_ok=True)
-    verbose("[+] Finish!")
+    verbose("[+] Finish!", Fore.GREEN)
 
 
 def merge(dirname: str or Path, remove: bool = False):
@@ -165,7 +165,7 @@ def merge(dirname: str or Path, remove: bool = False):
         verbose("[x] Directory not exists!", Fore.RED)
         return
 
-    verbose("[i] Reading configuration file", Fore.YELLOW)
+    verbose("[i] Reading configuration file")
     config = ConfigParser()
     config.read(dirpath / "config.ini", encoding="utf8")
     filename = config["ORIGINAL"]["filename"]
@@ -173,10 +173,10 @@ def merge(dirname: str or Path, remove: bool = False):
     if filepath.is_file():
         filepath.unlink()
 
-    verbose("[i] Merging files", Fore.YELLOW)
+    verbose("[i] Merging files")
     decompress = config["OPERATION"]["compress"]
     for path in get_sorted_files(dirpath, config):
-        verbose(f"[i] Reading file: {path.name}", Fore.YELLOW)
+        verbose(f"[i] Reading file: {path.name}")
         buffer = path.read_bytes()
         if decompress:
             buffer = zlib.decompress(buffer)
@@ -187,19 +187,19 @@ def merge(dirname: str or Path, remove: bool = False):
     if not filepath.is_file():
         filepath.write_bytes(b"")
 
-    verbose("[i] Verifying file hash", Fore.YELLOW)
+    verbose("[i] Verifying file hash")
     ver_filehash = compute_hash(filepath)
     filehash = config["ORIGINAL"]["hash"]
     if ver_filehash == filehash:
-        verbose("[+] Hash verification succeeded!")
+        verbose("[+] Hash verification succeeded!", Fore.GREEN)
     else:
         verbose("[x] Hash verification failed!", Fore.RED)
         exit(1)
 
     if remove:
-        verbose("[i] Removing the directory", Fore.YELLOW)
+        verbose("[i] Removing the directory")
         remove_dir(dirpath)
-    verbose("[+] Finish!")
+    verbose("[+] Finish!", Fore.GREEN)
 
 
 def compute_hash(filepath: Path, block_size: int = 512) -> str:
@@ -249,7 +249,7 @@ def get_sorted_files(dirpath: Path, config: ConfigParser):
     return filepaths
 
 
-def verbose(msg: str, color=Fore.GREEN):
+def verbose(msg: str, color=Fore.RESET):
     """Print a message with color.
 
     Args:

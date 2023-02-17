@@ -1,10 +1,13 @@
-"""Sync data with git
-"""
+"""Sync data with git."""
+import os
 import argparse
 
 from pathlib import Path
+from colorama import Fore
 
 import git
+
+from filesplitter import verbose
 
 
 def parse_args():
@@ -70,10 +73,10 @@ def parse_args():
         dest="remote_name",
         default="origin",
     )
-
     return parser.parse_args()
 
 
+# TODO: Set up stream
 def push_updates(repo: git.Repo, remote_name: str):
     """Push updates to the remote repository.
 
@@ -85,7 +88,7 @@ def push_updates(repo: git.Repo, remote_name: str):
         remote = repo.remote(remote_name)
         remote.push()
     except ValueError:
-        print("Remote doesn't exist")
+        verbose("[x] Remote doesn't exist", Fore.RED)
 
 
 def fetch_updates(repo: git.Repo, remote_name: str):
@@ -119,23 +122,28 @@ def batch_commit(
         push (bool, optional): push updates after doing commit. Defaults to False.
     """
     if fetch:
-        print("Fetching updates")
+        verbose("[i] Fetching updates")
         fetch_updates(repo, remote_name)
 
-    for path in get_changed_and_untracked_files(repo):
-        if path.name == ".git":
+    new_files = get_changed_and_untracked_files(repo)
+    while len(new_files) > 0:
+        path = new_files.pop()
+        filepath = Path(path)
+        if not filepath.exists():
+            verbose(f"[i] Adding {filepath.name}")
+            repo.git.add(all=True)
             continue
 
-        filepath = Path(path)
-        print(f"Adding {filepath.name}")
+        verbose(f"[i] Adding {filepath.name}")
         repo.index.add(filepath)
     repo.index.commit(msg)
+
     if push:
-        print("Pushing updates")
+        verbose("[i] Pushing updates")
         try:
             push_updates(repo, remote_name)
         except KeyboardInterrupt:
-            print("Keyboard interrupted! Exit...")
+            verbose("[i] Keyboard interrupted! Exit...", Fore.YELLOW)
 
 
 def individual_commit(
@@ -155,20 +163,28 @@ def individual_commit(
         push (bool, optional): push updates after doing commit. Defaults to False.
     """
     if fetch:
-        print("Fetching updates")
+        print("[i] Fetching updates")
         fetch_updates(repo, remote_name)
 
-    for path in get_changed_and_untracked_files(repo):
+    new_files = get_changed_and_untracked_files(repo)
+    while len(new_files) > 0:
+        path = new_files.pop()
         filepath = Path(path)
-        print(f"Adding {filepath.name}")
+        if not filepath.exists():
+            verbose(f"[i] Adding {filepath.name}")
+            repo.git.add(all=True)
+            repo.index.commit(msg)
+            continue
+
+        verbose(f"[i] Adding {filepath.name}")
         repo.index.add(filepath)
         repo.index.commit(msg)
         if push:
-            print(f"Pushing {filepath.name}")
+            print(f"[i] Pushing {filepath.name}")
             try:
                 push_updates(repo, remote_name)
             except KeyboardInterrupt:
-                print("Keyboard interrupted! Exit...")
+                print("[x] Keyboard interrupted! Exit...", Fore.YELLOW)
                 break
 
 
@@ -202,6 +218,7 @@ def main():
         repo = git.Repo.init()
     else:
         repo = git.Repo(args.git_dir)
+    os.chdir(repo.working_dir)
 
     if args.create_remote:
         create_new_remote(repo, args.remote_name, args.remote_url)
